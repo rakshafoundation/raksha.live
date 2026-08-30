@@ -16,8 +16,17 @@ export default async function StatsPage() {
   const [casesThisMonth, closedWithProof, closedTotal, sterilisations, activeRescuers, byArea] =
     await Promise.all([
       db.case.count({ where: { createdAt: { gte: monthStart } } }),
-      db.caseEvent.count({
-        where: { toStatus: CaseStatus.CLOSED, photoUrl: { not: null }, createdAt: { gte: monthStart } },
+      // "Closed with photo proof" means the case's history carries photo
+      // evidence somewhere (PICKED_UP/AT_VET/a photographed outcome) — not
+      // that the terminal CLOSED event itself has one. CLOSED never
+      // carries a photo of its own (see case-state-machine.ts), so
+      // checking CaseEvent.toStatus == CLOSED here would always be zero.
+      db.case.count({
+        where: {
+          status: CaseStatus.CLOSED,
+          closedAt: { gte: monthStart },
+          events: { some: { photoUrl: { not: null } } },
+        },
       }),
       db.case.count({ where: { status: CaseStatus.CLOSED, closedAt: { gte: monthStart } } }),
       db.careRequest.count({ where: { type: 'STERILISATION', status: 'COMPLETED', createdAt: { gte: monthStart } } }),
