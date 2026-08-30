@@ -1,0 +1,586 @@
+// Raksha Network — core data model.
+//
+// Geo: latitude/longitude are stored as plain Float columns and radius
+// queries use a haversine calculation in application code (see
+// src/lib/geo.ts). PostGIS is the recommended production upgrade for
+// nearest-responder queries at scale (see README) but is not required to
+// run this schema, so local/dev Postgres works without the extension.
+//
+// Every table that represents case history is append-only by convention:
+// CaseEvent rows are never updated or deleted by application code
+// (enforced in src/lib/case-state-machine.ts, not just here).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Identity, roles, verification
+// ---------------------------------------------------------------------------
+
+enum UserRoleName {
+  REPORTER
+  CARETAKER
+  RESCUER
+  AMBULANCE
+  NGO
+  VET
+  FOSTER
+  ADMIN
+}
+
+enum VerificationTier {
+  NONE // browse only
+  REPORTER // social login + OTP phone + ID doc
+  VERIFIED // + KYC + compliance docs + reference check, admin-approved
+  PAYMENT_APPROVED // + admin-approved payment details
+}
+
+enum IdDocType {
+  AADHAAR
+  DRIVING_LICENSE
+  VOTER_ID
+  PASSPORT
+  OTHER_GOVT_ID
+}
+
+model User {
+  id          String   @id @default(cuid())
+  name        String
+  email       String?  @unique
+  phone       String?  @unique
+  phoneVerifiedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Tier 1: identity doc is never stored as a raw image where avoidable.
+  // We record only that a document was checked, its type, and (optionally)
+  // an encrypted reference to a stored file — never expose via public API.
+  idVerified     Boolean    @default(false)
+  idDocType      IdDocType?
+  idDocRef       String? // encrypted storage key, admin-only access
+
+  verificationTier VerificationTier @default(NONE)
+
+  // Tier 3: payment details, admin-matched to verified identity.
+  // Only relevant for individuals receiving funds directly (e.g. an
+  // independent verified rescuer); org payouts live on Organisation.
+  paymentApprovedAt DateTime?
+  upiHandle         String?
+
+  roles         UserRoleAssignment[]
+  verifications Verification[]
+  organisationMemberships OrganisationMember[]
+
+  reportedCases      Case[]                @relation("ReportedBy")
+  caseFollows        CaseFollower[]
+  caseEventsActed    CaseEvent[]           @relation("EventActor")
+  assignments        Assignment[]
+  caretakerAnimals   CaretakerAnimal[]
+  careRequests       CareRequest[]
+  fosterPlacements   FosterPlacement[]
+  contributionsMade  Contribution[]        @relation("Donor")
+  moderationFlagsRaised ModerationFlag[]   @relation("FlagRaisedBy")
+
+  onDuty      Boolean @default(false) // availability toggle: rescuer/ambulance
+
+  @@index([verificationTier])
+}
+
+model UserRoleAssignment {
+  id     String       @id @default(cuid())
+  userId String
+  role   UserRoleName
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, role])
+}
+
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// One row per verification application (rescuer/ambulance/NGO/vet/foster
+// KYC, or payment-approval requests). Reviewed in the Command Center queue.
+model Verification {
+  id          String             @id @default(cuid())
+  userId      String?
+  organisationId String?
+  targetTier  VerificationTier
+  status      VerificationStatus @default(PENDING)
+  documents   Json // list of {type, storageRef} — encrypted refs only, never raw docs in API responses
+  referenceCheckNotes String?
+  reviewedByAdminId   String?
+  reviewedAt  DateTime?
+  rejectionReason String?
+  createdAt   DateTime           @default(now())
+
+  user         User?         @relation(fields: [userId], references: [id])
+  organisation Organisation? @relation(fields: [organisationId], references: [id])
+
+  @@index([status, targetTier])
+}
+
+// ---------------------------------------------------------------------------
+// Organisations (NGO/Shelter/Vet/Hospital/Ambulance operator)
+// ---------------------------------------------------------------------------
+
+enum OrganisationType {
+  NGO_SHELTER
+  VET_HOSPITAL
+  AMBULANCE_OPERATOR
+}
+
+model Organisation {
+  id          String           @id @default(cuid())
+  name        String
+  type        OrganisationType
+  area        String // e.g. "Worli" — public-safe, coarse location
+  latitude    Float
+  longitude   Float
+  phone       String
+  verificationTier VerificationTier @default(NONE)
+  has80G      Boolean          @default(false)
+  paymentApprovedAt DateTime?
+  upiHandle   String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  members      OrganisationMember[]
+  verifications Verification[]
+  capacity     OrgCapacity?
+  assignments  Assignment[]
+  invoices     Invoice[]
+  directoryListing DirectoryListing?
+
+  @@index([type, verificationTier])
+}
+
+model OrganisationMember {
+  id             String       @id @default(cuid())
+  organisationId String
+  userId         String
+  isAuthorisedSignatory Boolean @default(false)
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organisationId, userId])
+}
+
+// Live capacity board — the toggles the network routes on (§7 NGO dashboard).
+model OrgCapacity {
+  id             String   @id @default(cuid())
+  organisationId String   @unique
+  ambulanceFree  Boolean  @default(false)
+  kennelsTotal   Int      @default(0)
+  kennelsFree    Int      @default(0)
+  otAvailableToday Boolean @default(false)
+  acceptingEmergencies Boolean @default(true)
+  acceptingSterilisation Boolean @default(true)
+  updatedAt      DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// Cases — the heart of the system
+// ---------------------------------------------------------------------------
+
+enum Species {
+  DOG
+  CAT
+  BIRD
+  CATTLE
+  OTHER
+}
+
+enum InjuryType {
+  HIT_BY_VEHICLE
+  BLEEDING_WOUND
+  CANNOT_WALK
+  UNCONSCIOUS
+  SKIN_DISEASE
+  POISONING_SUSPECTED
+  ABANDONED_BABIES
+  STUCK_TRAPPED
+  OTHER
+}
+
+enum Urgency {
+  CRITICAL
+  URGENT
+  NON_URGENT
+}
+
+// Server-enforced order. src/lib/case-state-machine.ts is the single
+// source of truth for legal transitions and photo-proof requirements —
+// this enum only defines the possible values.
+enum CaseStatus {
+  REPORTED
+  TRIAGED
+  ACCEPTED
+  ASSIGNED
+  PICKED_UP
+  AT_VET
+  TREATMENT
+  RECOVERY
+  OUTCOME
+  CLOSED
+}
+
+enum CaseOutcomeType {
+  RELEASED
+  FOSTERED
+  ADOPTED
+  DECEASED
+  COULD_NOT_ATTEND
+}
+
+// Singleton row providing an atomic, gap-tolerant counter for case numbers
+// (RN-00001, RN-00002, ...). Incremented via `{ increment: 1 }`, which
+// Postgres executes as a single UPDATE ... RETURNING — safe under
+// concurrent case creation.
+model CaseSequence {
+  id    Int @id @default(1)
+  value Int @default(0)
+}
+
+model Case {
+  id           String     @id @default(cuid())
+  caseNumber   String     @unique // "RN-#####"
+  animalName   String
+  species      Species
+  injuryType   InjuryType
+
+  // Exact GPS — NEVER returned in a public API response. Only the derived
+  // `area` field (e.g. "Worli") is public. See src/lib/public-projection.ts.
+  latitude     Float
+  longitude    Float
+  area         String
+
+  reporterId   String
+  reporter     User       @relation("ReportedBy", fields: [reporterId], references: [id])
+
+  status       CaseStatus @default(REPORTED)
+  outcomeType  CaseOutcomeType?
+  // Required when outcomeType == COULD_NOT_ATTEND ("could not attend" is a
+  // valid closure but must carry a written, admin-visible reason).
+  outcomeReason String?
+
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  closedAt     DateTime?
+
+  photos       CasePhoto[]
+  events       CaseEvent[]
+  followers    CaseFollower[]
+  aiAssessments AiAssessment[]
+  assignments  Assignment[]
+  contributions Contribution[]
+  invoices     Invoice[]
+  escalations  Escalation[]
+  moderationFlags ModerationFlag[]
+
+  // Duplicate merge: a case that was folded into another lives on as a
+  // pointer, never deleted. mergedIntoId points at the surviving case.
+  mergedIntoId String?
+  mergedInto   Case?      @relation("CaseMerge", fields: [mergedIntoId], references: [id])
+  mergedCases  Case[]     @relation("CaseMerge")
+
+  @@index([status])
+  @@index([species, createdAt])
+  @@index([area])
+}
+
+model CasePhoto {
+  id        String   @id @default(cuid())
+  caseId    String
+  url       String
+  isGraphic Boolean  @default(false) // blurred by default publicly, tap-to-view
+  uploadedByUserId String
+  createdAt DateTime @default(now())
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+}
+
+// Immutable timeline event. Application code must only ever INSERT here —
+// never UPDATE or DELETE a CaseEvent row.
+model CaseEvent {
+  id         String     @id @default(cuid())
+  caseId     String
+  actorId    String
+  actorRole  UserRoleName
+  fromStatus CaseStatus?
+  toStatus   CaseStatus
+  photoUrl   String?
+  note       String?
+  createdAt  DateTime   @default(now())
+
+  case  Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  actor User @relation("EventActor", fields: [actorId], references: [id])
+
+  @@index([caseId, createdAt])
+}
+
+model CaseFollower {
+  id        String   @id @default(cuid())
+  caseId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([caseId, userId])
+}
+
+// AI triage output. Template-driven first aid — the model selects/adapts
+// a vet-written template, it does not freestyle medical advice.
+model AiAssessment {
+  id             String   @id @default(cuid())
+  caseId         String
+  suspectedInjury String
+  urgency        Urgency
+  templateId     String
+  confidence     Float // 0..1; low confidence must default to "treat as urgent"
+  rawModelOutput Json
+  createdAt      DateTime @default(now())
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+}
+
+// ---------------------------------------------------------------------------
+// Assignment / dispatch / escalation
+// ---------------------------------------------------------------------------
+
+enum AssignmentStatus {
+  PINGED
+  ACCEPTED
+  DECLINED
+  COMPLETED
+}
+
+model Assignment {
+  id             String           @id @default(cuid())
+  caseId         String
+  responderUserId String?
+  organisationId String?
+  status         AssignmentStatus @default(PINGED)
+  pingedAt       DateTime         @default(now())
+  respondedAt    DateTime?
+
+  case         Case          @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  responder    User?         @relation(fields: [responderUserId], references: [id])
+  organisation Organisation? @relation(fields: [organisationId], references: [id])
+
+  @@index([caseId, status])
+}
+
+// Every automatic escalation-ladder step, logged (§5 escalation ladder).
+model Escalation {
+  id        String   @id @default(cuid())
+  caseId    String
+  step      String // "WIDEN_RADIUS" | "ALL_NETWORK_BROADCAST" | "RAKSHA_TEAM_ALERTED"
+  minutesSinceReport Int
+  createdAt DateTime @default(now())
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+}
+
+// ---------------------------------------------------------------------------
+// Care lane (caretakers, non-emergency requests)
+// ---------------------------------------------------------------------------
+
+enum CareRequestType {
+  STERILISATION
+  VACCINATION
+  WOUND_SKIN_CARE
+  DEWORMING
+}
+
+enum CareRequestStatus {
+  OPEN
+  SLOT_OFFERED
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+model CaretakerAnimal {
+  id          String   @id @default(cuid())
+  caretakerId String
+  name        String
+  species     Species
+  vaccinated  Boolean  @default(false)
+  sterilised  Boolean  @default(false)
+  latitude    Float
+  longitude   Float
+  area        String
+  createdAt   DateTime @default(now())
+
+  caretaker    User          @relation(fields: [caretakerId], references: [id], onDelete: Cascade)
+  careRequests CareRequest[]
+
+  @@index([caretakerId])
+}
+
+model CareRequest {
+  id          String            @id @default(cuid())
+  caretakerId String
+  animalId    String?
+  type        CareRequestType
+  status      CareRequestStatus @default(OPEN)
+  organisationId String?
+  slotOfferedAt DateTime?
+  createdAt   DateTime          @default(now())
+
+  caretaker    User             @relation(fields: [caretakerId], references: [id])
+  animal       CaretakerAnimal? @relation(fields: [animalId], references: [id])
+
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// Foster
+// ---------------------------------------------------------------------------
+
+enum FosterPlacementStatus {
+  APPLIED
+  APPROVED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+model FosterPlacement {
+  id          String                 @id @default(cuid())
+  fosterId    String
+  caseId      String?
+  status      FosterPlacementStatus  @default(APPLIED)
+  startedAt   DateTime?
+  endedAt     DateTime?
+  createdAt   DateTime               @default(now())
+
+  foster User @relation(fields: [fosterId], references: [id])
+
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// Payments — platform NEVER holds funds. Donor pays caregiver directly;
+// both sides self-report and confirm on the timeline (§6/§10).
+// ---------------------------------------------------------------------------
+
+enum ContributionStatus {
+  MARKED_PAID // donor says they paid
+  CONFIRMED // caregiver confirms receipt
+}
+
+model Contribution {
+  id          String              @id @default(cuid())
+  caseId      String
+  donorUserId String
+  amountRupees Int
+  status      ContributionStatus  @default(MARKED_PAID)
+  confirmedAt DateTime?
+  createdAt   DateTime            @default(now())
+
+  case  Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  donor User @relation("Donor", fields: [donorUserId], references: [id])
+
+  @@index([caseId])
+}
+
+model Invoice {
+  id             String   @id @default(cuid())
+  caseId         String
+  organisationId String
+  amountRupees   Int
+  fileUrl        String
+  uploadedAt     DateTime @default(now())
+
+  case         Case         @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  organisation Organisation @relation(fields: [organisationId], references: [id])
+
+  @@index([caseId])
+}
+
+// ---------------------------------------------------------------------------
+// Directory (rescue network profiles + lighter-verification pet services)
+// ---------------------------------------------------------------------------
+
+enum DirectoryCategory {
+  NGO
+  VET
+  VET_LAB_DIAGNOSTICS
+  VET_PHARMACY
+  PET_FOOD_STORE
+  PET_FRIENDLY_CAFE
+  TOY_ACCESSORY_SHOP
+  GROOMER
+  BOARDING
+  TRAINER
+}
+
+model DirectoryListing {
+  id             String            @id @default(cuid())
+  organisationId String?           @unique // set only for verified rescue-network orgs
+  name           String
+  category       DirectoryCategory
+  area           String
+  latitude       Float
+  longitude      Float
+  phone          String
+  hours          String?
+  isOpen24x7     Boolean           @default(false)
+  claimedAt      DateTime? // "Claimed" badge after phone verification
+  createdAt      DateTime          @default(now())
+
+  organisation Organisation? @relation(fields: [organisationId], references: [id])
+
+  @@index([category, area])
+}
+
+// ---------------------------------------------------------------------------
+// Moderation (Command Center)
+// ---------------------------------------------------------------------------
+
+enum ModerationFlagType {
+  JUNK_REPORT
+  GRAPHIC_PHOTO
+  DUPLICATE_UNCERTAIN
+}
+
+enum ModerationFlagStatus {
+  OPEN
+  RESOLVED
+}
+
+model ModerationFlag {
+  id        String               @id @default(cuid())
+  caseId    String
+  type      ModerationFlagType
+  status    ModerationFlagStatus @default(OPEN)
+  raisedById String?
+  note      String?
+  createdAt DateTime             @default(now())
+
+  case     Case  @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  raisedBy User? @relation("FlagRaisedBy", fields: [raisedById], references: [id])
+
+  @@index([status])
+}
