@@ -2,7 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { Navigation, PhoneCall, Sparkles, Camera, CheckCircle2 } from 'lucide-react';
+import { Navigation, PhoneCall, Sparkles, Camera, CheckCircle2, Building2 } from 'lucide-react';
+
+interface NearestHelpEntry {
+  organisationId: string;
+  name: string;
+  distanceMeters: number;
+  phone: string;
+  available: boolean;
+}
 
 interface NetworkCase {
   caseNumber: string;
@@ -13,6 +21,8 @@ interface NetworkCase {
   area: string;
   reporter: { name: string; phone: string | null };
   assessment: { suspectedInjury: string; urgency: string; disclaimer?: string } | null;
+  receivingOrganisationName: string | null;
+  nearestHelp: NearestHelpEntry[];
 }
 
 const STEPS = [
@@ -100,6 +110,37 @@ export default function RescuerActiveCasePage() {
           </a>
         )}
       </div>
+
+      {data.receivingOrganisationName ? (
+        <div className="card flex items-center gap-2 border-info/25 bg-blue-50/40 font-semibold text-info">
+          <Building2 className="h-4 w-4 shrink-0" /> Bring to: {data.receivingOrganisationName} (already agreed to
+          receive this case)
+        </div>
+      ) : (
+        data.nearestHelp.length > 0 && (
+          <div className="card">
+            <p className="section-label mb-3">No destination confirmed yet — nearest options</p>
+            <ul className="flex flex-col gap-2.5">
+              {data.nearestHelp.map((h) => (
+                <li key={h.organisationId} className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="font-semibold text-zinc-900">{h.name}</p>
+                    <p className="text-xs text-zinc-500">
+                      {(h.distanceMeters / 1000).toFixed(1)} km · {h.available ? 'Available' : 'Busy'}
+                    </p>
+                  </div>
+                  <a
+                    href={`tel:${h.phone}`}
+                    className="flex shrink-0 items-center gap-1.5 rounded-full bg-info px-3 py-1.5 text-xs font-bold text-white"
+                  >
+                    <PhoneCall className="h-3.5 w-3.5" /> Call
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )
+      )}
 
       {error && <p className="text-sm text-critical">{error}</p>}
 

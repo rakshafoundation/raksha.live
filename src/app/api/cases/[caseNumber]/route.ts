@@ -12,7 +12,7 @@ import { toPublicCase } from '@/lib/public-projection';
 export async function GET(_request: NextRequest, { params }: { params: { caseNumber: string } }) {
   const found = await db.case.findUnique({
     where: { caseNumber: params.caseNumber },
-    include: { photos: true, events: true },
+    include: { photos: true, events: true, receivingOrganisation: { select: { name: true } } },
   });
 
   if (!found) {

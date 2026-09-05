@@ -18,6 +18,9 @@ export interface PublicCase {
   closedAt: Date | null;
   photos: PublicCasePhoto[];
   timeline: PublicTimelineEvent[];
+  // Public and safe: an org name is already public via the directory.
+  // Exact GPS/reporter identity stay excluded above this line.
+  receivingOrganisationName: string | null;
 }
 
 export interface PublicCasePhoto {
@@ -34,7 +37,7 @@ export interface PublicTimelineEvent {
 }
 
 export function toPublicCase(
-  c: Case & { photos: CasePhoto[]; events: CaseEvent[] }
+  c: Case & { photos: CasePhoto[]; events: CaseEvent[]; receivingOrganisation?: { name: string } | null }
 ): PublicCase {
   return {
     caseNumber: c.caseNumber,
@@ -47,6 +50,7 @@ export function toPublicCase(
     createdAt: c.createdAt,
     closedAt: c.closedAt,
     photos: c.photos.map((p) => ({ url: p.url, isGraphic: p.isGraphic })),
+    receivingOrganisationName: c.receivingOrganisation?.name ?? null,
     timeline: c.events
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
       .map((e) => ({

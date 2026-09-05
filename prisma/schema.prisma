@@ -159,6 +159,7 @@ model Organisation {
   assignments  Assignment[]
   invoices     Invoice[]
   directoryListing DirectoryListing?
+  receivingCases Case[] @relation("CaseReceivingOrg")
 
   @@index([type, verificationTier])
 }
@@ -269,6 +270,15 @@ model Case {
   reporterId   String
   reporter     User       @relation("ReportedBy", fields: [reporterId], references: [id])
 
+  // The NGO/vet that has committed to treating this animal — set when an
+  // NGO/vet accepts the case (independent of which rescuer, if any, does
+  // the physical pickup). First-come: once set, it cannot be claimed by a
+  // second organisation. Nullable because most of a case's life it is
+  // unset — informational for rescuers deciding where to bring the
+  // animal, not a required step in the state machine.
+  receivingOrganisationId String?
+  receivingOrganisation   Organisation? @relation("CaseReceivingOrg", fields: [receivingOrganisationId], references: [id])
+
   status       CaseStatus @default(REPORTED)
   outcomeType  CaseOutcomeType?
   // Required when outcomeType == COULD_NOT_ATTEND ("could not attend" is a
@@ -298,6 +308,7 @@ model Case {
   @@index([status])
   @@index([species, createdAt])
   @@index([area])
+  @@index([receivingOrganisationId])
 }
 
 model CasePhoto {

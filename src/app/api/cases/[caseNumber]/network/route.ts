@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { AssignmentStatus, CaseStatus, UserRoleName } from '@prisma/client';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { findNearestHelp } from '@/lib/nearest-help';
 
 const RESPONDER_ROLES: UserRoleName[] = [
   UserRoleName.RESCUER,
@@ -36,6 +37,7 @@ export async function GET(_request: NextRequest, { params }: { params: { caseNum
       aiAssessments: { orderBy: { createdAt: 'desc' }, take: 1 },
       assignments: { where: { status: AssignmentStatus.ACCEPTED } },
       photos: true,
+      receivingOrganisation: { select: { name: true } },
     },
   });
   if (!kase) return NextResponse.json({ error: 'Case not found' }, { status: 404 });
@@ -45,6 +47,12 @@ export async function GET(_request: NextRequest, { params }: { params: { caseNum
   if (!isAdmin && !isOpenForPreview && !isMyAssignment) {
     return NextResponse.json({ error: 'Not assigned to this case.' }, { status: 403 });
   }
+
+  // Only worth showing nearby options once there's actually a decision
+  // left to make — once a receiving org exists, that's where to go.
+  const nearestHelp = kase.receivingOrganisation
+    ? []
+    : await findNearestHelp({ latitude: kase.latitude, longitude: kase.longitude }, 5, kase.receivingOrganisationId);
 
   return NextResponse.json({
     caseNumber: kase.caseNumber,
@@ -58,5 +66,7 @@ export async function GET(_request: NextRequest, { params }: { params: { caseNum
     reporter: { name: kase.reporter.name, phone: kase.reporter.phone },
     assessment: kase.aiAssessments[0] ?? null,
     photos: kase.photos.map((p) => p.url),
+    receivingOrganisationName: kase.receivingOrganisation?.name ?? null,
+    nearestHelp,
   });
 }

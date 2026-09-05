@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { ShieldAlert } from 'lucide-react';
+import { ShieldAlert, Building2 } from 'lucide-react';
 import { db } from '@/lib/db';
 import { toPublicCase } from '@/lib/public-projection';
 import { StatusPill } from '@/components/StatusPill';
@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 export default async function CasePage({ params }: { params: { caseNumber: string } }) {
   const found = await db.case.findUnique({
     where: { caseNumber: params.caseNumber },
-    include: { photos: true, events: true },
+    include: { photos: true, events: true, receivingOrganisation: { select: { name: true } } },
   });
 
   if (!found) notFound();
@@ -32,6 +32,11 @@ export default async function CasePage({ params }: { params: { caseNumber: strin
         <div>
           <StatusPill status={publicCase.status} outcomeType={publicCase.outcomeType} />
         </div>
+        {publicCase.receivingOrganisationName && (
+          <p className="flex items-center gap-1.5 text-sm font-semibold text-info">
+            <Building2 className="h-4 w-4" /> Being treated at {publicCase.receivingOrganisationName}
+          </p>
+        )}
       </header>
 
       {publicCase.photos.length > 0 && (

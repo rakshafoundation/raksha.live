@@ -9,6 +9,7 @@ export interface NearestHelpEntry {
   distanceMeters: number;
   phone: string;
   available: boolean;
+  acceptedToReceive: boolean;
 }
 
 /**
@@ -17,10 +18,17 @@ export interface NearestHelpEntry {
  * availability. "Available" reads OrgCapacity toggles where present;
  * an organisation with no capacity row yet is treated as unknown, not
  * unavailable, so it still surfaces (sorted after known-available ones).
+ *
+ * `receivingOrganisationId`, when passed, flags whichever org has
+ * already committed to treating this specific case (see
+ * accept-receiving/route.ts) — that entry is pinned first regardless of
+ * distance, since "who already said yes" matters more than "who's
+ * closest" once someone has actually said yes.
  */
 export async function findNearestHelp(
   location: LatLng,
-  limit = 5
+  limit = 5,
+  receivingOrganisationId?: string | null
 ): Promise<NearestHelpEntry[]> {
   const orgs = await db.organisation.findMany({
     where: { verificationTier: { in: [VerificationTier.VERIFIED, VerificationTier.PAYMENT_APPROVED] } },
@@ -41,9 +49,11 @@ export async function findNearestHelp(
         distanceMeters: Math.round(distance),
         phone: org.phone,
         available,
+        acceptedToReceive: org.id === receivingOrganisationId,
       };
     })
     .sort((a, b) => {
+      if (a.acceptedToReceive !== b.acceptedToReceive) return a.acceptedToReceive ? -1 : 1;
       if (a.available !== b.available) return a.available ? -1 : 1;
       return a.distanceMeters - b.distanceMeters;
     })
