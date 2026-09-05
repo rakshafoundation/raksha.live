@@ -66,6 +66,28 @@ proof-gated status updates → public case page shows it all live.`
 - **Live feed, stats, directory** (`/feed`, `/stats`, `/directory`) —
   public, no login. Directory ranks verified rescue-network listings
   above commercial ones (via `organisationId` presence).
+- **NGO/vet case acceptance** (`/intake`, `Case.receivingOrganisationId`)
+  — verified NGO/vet staff can claim a case for treatment (first-come),
+  independent of whichever rescuer does the physical pickup. This is
+  deliberately the *only* thing NGO/vet accounts do on the platform right
+  now: no treatment log, no patient records, no capacity board — the
+  brief's fuller NGO dashboard (§7 screen 12) is a later-stage feature
+  once case volume justifies it, not part of this pass. Once a case is
+  claimed, the rescuer's handover screen and the public case page both
+  show which org, and the AI nearest-help list pins it first.
+- **Foster apply** (`/foster`) — a "needs a foster" feed, gated to
+  `RECOVERY`-status cases only (fostering is post-treatment placement,
+  not an emergency-response role, so it's a separate mechanism from the
+  NGO/vet accept flow above — see `foster-apply/route.ts`).
+- **Design system** — Plus Jakarta Sans, a lucide-react icon set, a step
+  progress + sticky bottom CTA on the report flow, an icon-per-status
+  timeline, consistent header/nav — applied deepest on the reporter
+  journey (`/report`, `/c/[caseNumber]`) per the brief's own emphasis on
+  ease for a possibly-panicking, one-thumbed reporter.
+- **Supabase Storage adapter** (`src/lib/storage.ts`) — uploads go to
+  Supabase Storage when `NEXT_PUBLIC_SUPABASE_URL` +
+  `SUPABASE_SERVICE_ROLE_KEY` are set, else fall back to local disk for
+  dev. See **Deploying** below.
 
 ## What's stubbed or deferred
 
@@ -77,11 +99,11 @@ an oversight:
   review flow are not implemented. `Verification` rows and the Command
   Center queue exist; a human still has to build the intake UI and wire
   a real OTP provider before this can take real signups.
-- **Cloud storage**: `src/lib/storage.ts` writes to `public/uploads/` on
-  local disk. Swap for S3-compatible storage (Supabase Storage or
-  Cloudflare R2) before any real deployment — case photos are fine in a
-  public bucket, but verification/compliance documents need a *separate*,
-  private, encrypted bucket that this function must never touch.
+- **Cloud storage**: implemented for Supabase Storage (see **Deploying**
+  below) — case photos only. Verification/compliance documents need a
+  *separate*, private, encrypted bucket with admin-only access; that
+  upload path isn't built at all yet, so no ID/KYC document handling
+  should be wired up until it is.
 - **PostGIS**: geo queries use a haversine calculation in application
   code (`src/lib/geo.ts`) against plain `Float` lat/lng columns. Fine at
   pilot scale; move nearest-responder queries into PostGIS once case
@@ -94,10 +116,13 @@ an oversight:
 - **Payments**: nothing in §6/§10 is built yet (deliberately — the brief
   says build this last, after 2–3 manually-run pilot cases). The schema
   (`Contribution`, `Invoice`) is ready for it.
-- **NGO dashboard, Vet/Hospital view, Foster view, Caretaker lane,
-  WhatsApp entry**: not built. `OrgCapacity`, `CareRequest`,
-  `CaretakerAnimal`, `FosterPlacement` tables exist and are ready to build
-  screens against.
+- **NGO dashboard, Vet/Hospital view, Caretaker lane, WhatsApp entry**:
+  not built. NGO/vet only have the accept-a-case action described above
+  — no capacity board, treatment log, or animals-in-care list (`OrgCapacity`
+  exists in the schema but nothing reads or writes it yet). Foster only
+  has the apply-to-a-case action — no NGO-side approval flow yet
+  (`FosterPlacementStatus` stays at `APPLIED`). `CareRequest`,
+  `CaretakerAnimal` tables exist and are ready to build screens against.
 - **Directory seed data**: this repo does **not** ship Raksha's real
   ~89-practice contact list — that's real organisational data and
   belongs in a private import, not committed to source. Drop a real
@@ -130,6 +155,65 @@ To exercise the full pilot loop locally with `ENABLE_DEV_LOGIN=true`:
 
 Run tests: `npm test`. Typecheck: `npm run typecheck`. Build: `npm run build`.
 
+## Deploying (Supabase + Vercel)
+
+Two accounts, both free-tier, no credit card required. This is the one
+part that has to happen outside this repo — nobody else can create your
+Supabase/Vercel accounts for you. Everything else is already wired up
+so it's paste-values-and-deploy, not debugging.
+
+**1. Supabase — database + photo storage (~3 min)**
+
+1. [supabase.com](https://supabase.com) → New Project → pick a name, a
+   database password (save it), and a region (Mumbai/`ap-south-1` for
+   lowest latency to real users) → Create (takes ~2 min to provision).
+2. Project Settings → Database → Connection string → copy **two**
+   strings:
+   - The **Transaction pooler** one (port `6543`, has `?pgbouncer=true`)
+     → this is `DATABASE_URL`.
+   - The **direct connection** one (port `5432`) → this is `DIRECT_URL`.
+   - (Prisma needs both — the pooler for normal queries, the direct
+     connection for migrations. See the comment on `datasource db` in
+     `prisma/schema.prisma` if curious why.)
+3. Storage tab → New bucket → name it `raksha-case-photos` → **make it
+   public** (case photos are public content per the brief) → Create.
+4. Project Settings → API → copy the **Project URL** (→
+   `NEXT_PUBLIC_SUPABASE_URL`) and the **`service_role` secret** (→
+   `SUPABASE_SERVICE_ROLE_KEY` — this key bypasses row-level security,
+   never expose it client-side or commit it).
+
+**2. Vercel — hosting (~3 min)**
+
+1. [vercel.com](https://vercel.com) → sign in with GitHub → Add New →
+   Project → import `rakshafoundation/raksha.live` → select this branch.
+2. Before deploying, add these Environment Variables (Settings →
+   Environment Variables, or the form on the import screen):
+
+   | Variable | Value |
+   |---|---|
+   | `DATABASE_URL` | Supabase pooler string from step 1.2 |
+   | `DIRECT_URL` | Supabase direct string from step 1.2 |
+   | `NEXTAUTH_URL` | your Vercel URL, e.g. `https://raksha-network.vercel.app` |
+   | `NEXTAUTH_SECRET` | output of `openssl rand -base64 32` |
+   | `NEXT_PUBLIC_SUPABASE_URL` | from step 1.4 |
+   | `SUPABASE_SERVICE_ROLE_KEY` | from step 1.4 |
+   | `STORAGE_BUCKET_PHOTOS` | `raksha-case-photos` |
+   | `ANTHROPIC_API_KEY` | optional — triage fails safe to "treat as urgent" without it |
+   | `ENABLE_DEV_LOGIN` / `NEXT_PUBLIC_DEV_LOGIN_ENABLED` | `true` if you want the phone-only dev login live for demoing before real OTP/OAuth is wired; otherwise omit both |
+
+3. Deploy. The build runs `prisma migrate deploy` automatically before
+   `next build` (see the `vercel-build` script in `package.json`) — the
+   database schema is created on the very first deploy, no manual step.
+4. Once it's live, seed the directory with demo data by running
+   `DATABASE_URL=<your Supabase pooler string> DIRECT_URL=<your Supabase direct string> npm run db:seed`
+   locally (it targets whatever `DATABASE_URL`/`DIRECT_URL` you give it —
+   pointing it at Supabase seeds the deployed database, not your laptop).
+
+That's the whole path to a real, shareable URL. Google/Facebook/Apple
+login and phone OTP still need their own provider setup (see
+`.env.example`) before this is safe to open to actual members of the
+public — until then, `ENABLE_DEV_LOGIN` is the honest way to demo it.
+
 ## Non-negotiables checklist (brief §11) — status
 
 - [x] Server-side enforcement of photo-required transitions — never trusts the client (`case-state-machine.ts`, re-validated inside the DB transaction in `case-events.ts`)
@@ -146,7 +230,11 @@ Run tests: `npm test`. Typecheck: `npm run typecheck`. Build: `npm run build`.
 
 ## Roadmap (continuing the brief's build order, §10)
 
-Steps 1–7 are the substance of this pass. Next, in order: NGO dashboard
-(capacity board + intake + treatment log) → Vet/Hospital view → Foster
-view → Caretaker lane → donations (after manual pilot cases) → WhatsApp
-entry → real OTP/ID verification → cloud storage → PostGIS.
+Steps 1–7 are the substance of the first pass, plus a lightweight
+NGO/vet-accepts-a-case mechanism and the foster-apply flow. Deliberately
+not yet built, in likely order: real phone OTP + ID verification (needed
+before real members of the public can sign up) → WhatsApp entry → the
+fuller NGO dashboard (capacity board, treatment log, animals-in-care —
+only worth building once case volume through `/intake` justifies it, per
+direction from Raksha) → Caretaker lane → donations (after manual pilot
+cases) → PostGIS at scale.
