@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { AssignmentStatus, CaseStatus, OrganisationType, UserRoleName, VerificationTier } from '@prisma/client';
+import { AssignmentStatus, CaseStatus, UserRoleName } from '@prisma/client';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { findNgoOrVetMembership } from '@/lib/org-membership';
 
 const ALREADY_CLAIMED = 'ALREADY_CLAIMED';
 
@@ -26,16 +27,7 @@ export async function POST(_request: NextRequest, { params }: { params: { caseNu
     return NextResponse.json({ error: 'Only NGO/vet staff can accept a case for treatment.' }, { status: 403 });
   }
 
-  const membership = await db.organisationMember.findFirst({
-    where: {
-      userId: session.user.id,
-      organisation: {
-        type: { in: [OrganisationType.NGO_SHELTER, OrganisationType.VET_HOSPITAL] },
-        verificationTier: { in: [VerificationTier.VERIFIED, VerificationTier.PAYMENT_APPROVED] },
-      },
-    },
-    include: { organisation: true },
-  });
+  const membership = await findNgoOrVetMembership(session.user.id);
   if (!membership) {
     return NextResponse.json(
       { error: 'You are not a verified member of an NGO or vet/hospital organisation.' },

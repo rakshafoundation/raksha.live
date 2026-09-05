@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { CaseStatus, OrganisationType, UserRoleName, VerificationTier } from '@prisma/client';
+import { CaseStatus, UserRoleName } from '@prisma/client';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { distanceMeters } from '@/lib/geo';
+import { findNgoOrVetMembership } from '@/lib/org-membership';
 
 const STAGES_STILL_OPEN_FOR_INTAKE: CaseStatus[] = [
   CaseStatus.TRIAGED,
@@ -28,16 +29,7 @@ export async function GET() {
     return NextResponse.json({ error: 'NGO/vet role required.' }, { status: 403 });
   }
 
-  const membership = await db.organisationMember.findFirst({
-    where: {
-      userId: session.user.id,
-      organisation: {
-        type: { in: [OrganisationType.NGO_SHELTER, OrganisationType.VET_HOSPITAL] },
-        verificationTier: { in: [VerificationTier.VERIFIED, VerificationTier.PAYMENT_APPROVED] },
-      },
-    },
-    include: { organisation: true },
-  });
+  const membership = await findNgoOrVetMembership(session.user.id);
   if (!membership) {
     return NextResponse.json(
       { error: 'You are not a verified member of an NGO or vet/hospital organisation.' },
