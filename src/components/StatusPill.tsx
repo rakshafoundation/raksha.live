@@ -9,6 +9,15 @@ const STYLES: Record<string, string> = {
   gray: 'bg-zinc-100 text-zinc-600',
 };
 
+const DOT_STYLES: Record<string, string> = {
+  red: 'bg-critical',
+  amber: 'bg-urgent',
+  green: 'bg-success',
+  blue: 'bg-info',
+  purple: 'bg-ai',
+  gray: 'bg-zinc-400',
+};
+
 const STATUS_LABEL: Record<CaseStatus, string> = {
   REPORTED: 'Reported',
   TRIAGED: 'Triaged',
@@ -58,7 +67,8 @@ export function StatusPill({
   }
 
   return (
-    <span className={`inline-block rounded-full px-3 py-1 text-sm font-semibold ${STYLES[color]}`}>
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-bold ${STYLES[color]}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${DOT_STYLES[color]}`} />
       {label}
     </span>
   );

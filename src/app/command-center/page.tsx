@@ -1,6 +1,7 @@
 import { getServerSession } from 'next-auth';
 import { redirect } from 'next/navigation';
 import { CaseStatus, UserRoleName, VerificationStatus, ModerationFlagStatus } from '@prisma/client';
+import { LayoutDashboard, PartyPopper } from 'lucide-react';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { VerificationDecisionButtons } from './VerificationDecisionButtons';
@@ -44,8 +45,13 @@ export default async function CommandCenterPage() {
   const slaAtRisk = unassigned.filter((c) => minutesSince(c.createdAt) >= SLA_MINUTES);
 
   return (
-    <main className="flex flex-col gap-8 p-4 pb-16">
-      <h1 className="text-xl font-bold">Command Center</h1>
+    <main className="mx-auto flex max-w-2xl flex-col gap-8 px-4 pb-16 pt-6">
+      <header className="flex items-center gap-2.5">
+        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-900 text-white">
+          <LayoutDashboard className="h-4.5 w-4.5" />
+        </span>
+        <h1 className="text-xl font-extrabold tracking-tight text-zinc-900">Command Center</h1>
+      </header>
 
       <div className="grid grid-cols-3 gap-3">
         <Metric label="Unassigned" value={unassigned.length} danger={unassigned.length > 0} />
@@ -54,25 +60,30 @@ export default async function CommandCenterPage() {
       </div>
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-500">
-          Unassigned cases
-        </h2>
-        <div className="flex flex-col gap-2">
-          {unassigned.length === 0 && <p className="text-zinc-500">Nothing waiting. 🎉</p>}
+        <h2 className="section-label mb-3">Unassigned cases</h2>
+        <div className="flex flex-col gap-2.5">
+          {unassigned.length === 0 && (
+            <p className="card flex items-center gap-2 text-sm text-zinc-500">
+              <PartyPopper className="h-4 w-4 text-success" /> Nothing waiting.
+            </p>
+          )}
           {unassigned.map((c) => {
             const elapsed = minutesSince(c.createdAt);
             const atRisk = elapsed >= SLA_MINUTES;
             return (
-              <div key={c.id} className={`card flex items-center justify-between ${atRisk ? 'animate-pulse border-critical bg-red-50' : ''}`}>
+              <div
+                key={c.id}
+                className={`card flex items-center justify-between ${atRisk ? 'animate-pulse border-critical bg-red-50' : ''}`}
+              >
                 <div>
-                  <p className="font-semibold">
-                    {c.animalName} · {c.caseNumber}
+                  <p className="font-bold text-zinc-900">
+                    {c.animalName} · <span className="font-medium text-zinc-400">{c.caseNumber}</span>
                   </p>
                   <p className="text-sm text-zinc-500">
                     {c.aiAssessments[0]?.urgency ?? 'Pending triage'} · {elapsed} min since report
                   </p>
                 </div>
-                <a href={`/c/${c.caseNumber}`} className="text-sm font-bold text-info">
+                <a href={`/c/${c.caseNumber}`} className="shrink-0 text-sm font-bold text-info">
                   View →
                 </a>
               </div>
@@ -82,15 +93,13 @@ export default async function CommandCenterPage() {
       </section>
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-500">
-          Verification queue
-        </h2>
-        <div className="flex flex-col gap-2">
-          {pendingVerifications.length === 0 && <p className="text-zinc-500">No pending applications.</p>}
+        <h2 className="section-label mb-3">Verification queue</h2>
+        <div className="flex flex-col gap-2.5">
+          {pendingVerifications.length === 0 && <p className="card text-sm text-zinc-500">No pending applications.</p>}
           {pendingVerifications.map((v) => (
-            <div key={v.id} className="card flex items-center justify-between">
+            <div key={v.id} className="card flex items-center justify-between gap-2">
               <div>
-                <p className="font-semibold">{v.user?.name ?? v.organisation?.name ?? 'Unknown applicant'}</p>
+                <p className="font-bold text-zinc-900">{v.user?.name ?? v.organisation?.name ?? 'Unknown applicant'}</p>
                 <p className="text-sm text-zinc-500">Target tier: {v.targetTier}</p>
               </div>
               <VerificationDecisionButtons id={v.id} />
@@ -100,14 +109,12 @@ export default async function CommandCenterPage() {
       </section>
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-500">
-          Merge suggestions / moderation
-        </h2>
-        <div className="flex flex-col gap-2">
-          {mergeFlags.length === 0 && <p className="text-zinc-500">Nothing flagged.</p>}
+        <h2 className="section-label mb-3">Merge suggestions / moderation</h2>
+        <div className="flex flex-col gap-2.5">
+          {mergeFlags.length === 0 && <p className="card text-sm text-zinc-500">Nothing flagged.</p>}
           {mergeFlags.map((f) => (
             <div key={f.id} className="card">
-              <p className="font-semibold">
+              <p className="font-bold text-zinc-900">
                 {f.type} — {f.case.animalName} ({f.case.caseNumber})
               </p>
               {f.note && <p className="text-sm text-zinc-500">{f.note}</p>}
@@ -124,9 +131,9 @@ export default async function CommandCenterPage() {
 
 function Metric({ label, value, danger }: { label: string; value: number; danger?: boolean }) {
   return (
-    <div className={`card text-center ${danger ? 'border-critical' : ''}`}>
-      <div className={`text-2xl font-bold ${danger ? 'text-critical' : ''}`}>{value}</div>
-      <div className="text-xs text-zinc-500">{label}</div>
+    <div className={`card text-center ${danger ? 'border-critical/40 bg-red-50/50' : ''}`}>
+      <div className={`text-2xl font-extrabold ${danger ? 'text-critical' : 'text-zinc-900'}`}>{value}</div>
+      <div className="text-xs font-medium text-zinc-500">{label}</div>
     </div>
   );
 }

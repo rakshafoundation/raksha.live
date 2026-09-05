@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import { Navigation, PhoneCall, Sparkles, Camera, CheckCircle2 } from 'lucide-react';
 
 interface NetworkCase {
   caseNumber: string;
@@ -64,35 +65,38 @@ export default function RescuerActiveCasePage() {
     }
   }
 
-  if (!data) return <main className="p-4">Loading…</main>;
+  if (!data) return <main className="px-4 pt-16 text-center text-zinc-400">Loading…</main>;
 
   const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${data.latitude},${data.longitude}`;
   const currentStepIndex = STEPS.findIndex((s) => s.fromStatus === data.status);
   const doneWithSteps = currentStepIndex === -1 && data.status !== 'ACCEPTED';
 
   return (
-    <main className="flex flex-col gap-4 p-4 pb-16">
-      <h1 className="text-xl font-bold">
-        {data.animalName} · {data.caseNumber}
-      </h1>
-      <p className="text-sm text-zinc-500">{data.area}</p>
+    <main className="flex flex-col gap-5 px-4 pb-16 pt-6">
+      <header>
+        <p className="text-xs font-semibold text-zinc-400">{data.caseNumber}</p>
+        <h1 className="text-2xl font-extrabold tracking-tight text-zinc-900">{data.animalName}</h1>
+        <p className="text-sm text-zinc-500">{data.area}</p>
+      </header>
 
       {data.assessment && (
-        <div className="card border-ai">
-          <p className="mb-1 font-semibold text-ai">✨ AI handling note</p>
-          <p>{data.assessment.suspectedInjury}</p>
-          <p className="font-medium text-urgent">Urgency: {data.assessment.urgency}</p>
-          <p className="text-xs text-zinc-500">⚠️ Triage guidance, not a diagnosis.</p>
+        <div className="card border-ai/25 bg-purple-50/40">
+          <p className="mb-1.5 flex items-center gap-1.5 text-sm font-bold text-ai">
+            <Sparkles className="h-4 w-4" /> AI handling note
+          </p>
+          <p className="font-semibold text-zinc-900">{data.assessment.suspectedInjury}</p>
+          <p className="text-sm font-bold uppercase tracking-wide text-urgent">{data.assessment.urgency}</p>
+          <p className="mt-1 text-xs text-zinc-400">⚠️ Triage guidance, not a diagnosis.</p>
         </div>
       )}
 
       <div className="flex gap-3">
-        <a href={mapsUrl} target="_blank" rel="noreferrer" className="btn-primary flex-1 text-center">
-          Navigate
+        <a href={mapsUrl} target="_blank" rel="noreferrer" className="btn-primary gap-2">
+          <Navigation className="h-4 w-4" /> Navigate
         </a>
         {data.reporter.phone && (
-          <a href={`tel:${data.reporter.phone}`} className="flex-1 rounded-card border-2 border-zinc-300 py-4 text-center font-bold">
-            Call reporter
+          <a href={`tel:${data.reporter.phone}`} className="btn-secondary gap-2">
+            <PhoneCall className="h-4 w-4" /> Call reporter
           </a>
         )}
       </div>
@@ -119,8 +123,9 @@ export default function RescuerActiveCasePage() {
       </div>
 
       {data.status === 'AT_VET' && (
-        <p className="card text-center font-semibold text-success">
-          ✅ Handed over. This case now continues at the vet/NGO.
+        <p className="card flex flex-col items-center gap-2 py-6 text-center font-semibold text-success">
+          <CheckCircle2 className="h-8 w-8" />
+          Handed over. This case now continues at the vet/NGO.
         </p>
       )}
     </main>
@@ -145,13 +150,17 @@ function StepButton({
   const [photo, setPhoto] = useState<File | null>(null);
 
   if (done) {
-    return <div className="card text-success">✓ {label}</div>;
+    return (
+      <div className="card flex items-center gap-2 text-success">
+        <CheckCircle2 className="h-4 w-4" /> {label}
+      </div>
+    );
   }
 
   return (
-    <div className={`card ${locked ? 'opacity-40' : ''}`}>
-      <p className="mb-2 font-medium">
-        {label} {requiresPhoto && '📸 (photo required)'}
+    <div className={`card transition-opacity ${locked ? 'opacity-40' : ''}`}>
+      <p className="mb-2 flex items-center gap-1.5 font-semibold text-zinc-900">
+        {label} {requiresPhoto && <Camera className="h-4 w-4 text-zinc-400" />}
       </p>
       {requiresPhoto && !locked && (
         <input
@@ -159,13 +168,13 @@ function StepButton({
           accept="image/*"
           capture="environment"
           onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}
-          className="mb-2 block text-sm"
+          className="mb-2 block text-sm text-zinc-500"
         />
       )}
       <button
         disabled={locked || submitting || (requiresPhoto && !photo)}
         onClick={() => onSubmit(photo)}
-        className="btn-primary w-full"
+        className="btn-primary"
       >
         {submitting ? 'Updating…' : label}
       </button>

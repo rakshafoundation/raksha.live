@@ -140,7 +140,10 @@ export async function POST(request: NextRequest) {
           actorRole: UserRoleName.REPORTER,
           fromStatus: CaseStatus.REPORTED,
           toStatus: CaseStatus.TRIAGED,
-          note: 'AI triage complete',
+          // The timeline UI already labels this event "AI triage complete"
+          // from its toStatus — the note should add information, not repeat
+          // the label, so it carries the actual finding instead.
+          note: `${triage.suspectedInjury} · ${triage.urgency}`,
         },
       }),
     ]);
