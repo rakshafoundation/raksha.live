@@ -245,16 +245,15 @@ the initial population):** open
 `https://<your-app>/api/admin/directory/bulk-import?secret=<ADMIN_DIRECTORY_SECRET>`
 — this imports the real, pre-researched list of Mumbai NGOs/shelters,
 vet hospitals, pet stores, vet pharmacies, and animal ambulances baked
-into `src/lib/directory-seed-data.ts`. It geocodes each address (via
-OpenStreetMap's free Nominatim service) and writes it straight to the
-live database, entirely inside your Vercel deployment — no terminal, no
-DB access, nothing installed. It processes a small batch at a time and
-ends each page with a "Continue" button; keep clicking until it says
-"All done." It's safe to click "Continue" again or re-open the same
-URL if you're unsure how far you got — it skips anything already
-imported rather than duplicating it. To add more real listings later,
-extend the `DIRECTORY_SEED_DATA` array and redeploy, then revisit the
-same URL.
+into `src/lib/directory-seed-data.ts`, writing straight to the live
+database entirely inside your Vercel deployment — no terminal, no DB
+access, nothing installed. One visit does the whole thing and shows a
+report of what was added. It's safe to re-open the same URL any time
+(e.g. after extending `DIRECTORY_SEED_DATA` with more real listings and
+redeploying) — it skips anything already imported rather than
+duplicating it. Coordinates in that file are neighbourhood-level
+approximations rather than exact geocoded addresses (see the file's
+header for why); nudge any pin that looks off via `/admin/directory`.
 
 **Bulk import from your own spreadsheet:** put a CSV at
 `prisma/directory-seed.csv` (columns: see
