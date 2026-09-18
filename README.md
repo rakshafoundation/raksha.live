@@ -218,20 +218,35 @@ message and the List view is unaffected.
    | `STORAGE_BUCKET_PHOTOS` | `raksha-case-photos` |
    | `ANTHROPIC_API_KEY` | optional — triage fails safe to "treat as urgent" without it |
    | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | optional — from step 1b, powers the `/directory` map tab |
+   | `ADMIN_DIRECTORY_SECRET` | any long random string — lets you add real directory listings, see below |
    | `ENABLE_DEV_LOGIN` / `NEXT_PUBLIC_DEV_LOGIN_ENABLED` | `true` if you want the phone-only dev login live for demoing before real OTP/OAuth is wired; otherwise omit both |
 
 3. Deploy. The build runs `prisma migrate deploy` automatically before
    `next build` (see the `vercel-build` script in `package.json`) — the
    database schema is created on the very first deploy, no manual step.
-4. Once it's live, seed the directory with demo data by running
-   `DATABASE_URL=<your Supabase pooler string> DIRECT_URL=<your Supabase direct string> npm run db:seed`
-   locally (it targets whatever `DATABASE_URL`/`DIRECT_URL` you give it —
-   pointing it at Supabase seeds the deployed database, not your laptop).
 
 That's the whole path to a real, shareable URL. Google/Facebook/Apple
 login and phone OTP still need their own provider setup (see
 `.env.example`) before this is safe to open to actual members of the
 public — until then, `ENABLE_DEV_LOGIN` is the honest way to demo it.
+
+### Adding real vets/NGOs/pharmacies to the directory
+
+**In-app, one at a time (recommended for a live deployment):** open
+`https://<your-app>/admin/directory`, paste in the `ADMIN_DIRECTORY_SECRET`
+you set above, fill in the form, and tap the map to set the location. It
+shows up on `/directory` immediately — no redeploy, no terminal, no
+database access needed. This page isn't linked from anywhere in the nav
+on purpose; bookmark the URL. Anyone with the secret can add listings,
+so treat it like a password.
+
+**Bulk import from a spreadsheet (for an initial large batch):** put a
+CSV at `prisma/directory-seed.csv` (columns: see
+`prisma/directory-seed-template.csv`) and run
+`DATABASE_URL=<your Supabase pooler string> DIRECT_URL=<your Supabase direct string> npm run db:seed`
+locally — this needs Node.js and a clone of this repo, so it's really
+only worth it for importing dozens of listings at once rather than a
+handful.
 
 ## Non-negotiables checklist (brief §11) — status
 

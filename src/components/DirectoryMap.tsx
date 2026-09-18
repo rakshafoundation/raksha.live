@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { DirectoryCategory } from '@prisma/client';
 import { CATEGORY_LABELS, CATEGORY_MARKER_COLOR } from '@/lib/directory-categories';
+import { loadGoogleMaps } from '@/lib/google-maps-loader';
 
 export interface MapListing {
   id: string;
@@ -16,28 +17,6 @@ export interface MapListing {
 }
 
 const MUMBAI_CENTER = { lat: 19.076, lng: 72.8777 };
-
-// Google Maps' loader script only fires its callback once per page —
-// track the promise globally so switching List<->Map repeatedly (which
-// remounts this component) doesn't try to inject the <script> tag twice.
-let mapsLoaderPromise: Promise<void> | null = null;
-
-function loadGoogleMaps(apiKey: string): Promise<void> {
-  if (typeof window === 'undefined') return Promise.resolve();
-  if ((window as any).google?.maps) return Promise.resolve();
-  if (mapsLoaderPromise) return mapsLoaderPromise;
-
-  mapsLoaderPromise = new Promise((resolve, reject) => {
-    const callbackName = '__rakshaGoogleMapsReady';
-    (window as any)[callbackName] = () => resolve();
-    const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&callback=${callbackName}`;
-    script.async = true;
-    script.onerror = () => reject(new Error('Failed to load Google Maps'));
-    document.head.appendChild(script);
-  });
-  return mapsLoaderPromise;
-}
 
 export function DirectoryMap({
   listings,
