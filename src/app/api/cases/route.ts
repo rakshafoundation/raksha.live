@@ -7,7 +7,7 @@ import { db } from '@/lib/db';
 import { saveCasePhoto } from '@/lib/storage';
 import { formatCaseNumber } from '@/lib/case-id';
 import { runTriage } from '@/lib/ai/triage';
-import { findNearestHelp } from '@/lib/nearest-help';
+import { findNearestHelp, findNearbyDirectoryListings } from '@/lib/nearest-help';
 import { toPublicCase } from '@/lib/public-projection';
 
 const CreateCaseSchema = z.object({
@@ -154,12 +154,14 @@ export async function POST(request: NextRequest) {
   }
 
   const nearestHelp = await findNearestHelp({ latitude: input.latitude, longitude: input.longitude });
+  const nearbyDirectory = await findNearbyDirectoryListings({ latitude: input.latitude, longitude: input.longitude });
 
   return NextResponse.json(
     {
       case: toPublicCase({ ...created, status: assessment ? CaseStatus.TRIAGED : created.status }),
       assessment,
       nearestHelp,
+      nearbyDirectory,
     },
     { status: 201 }
   );

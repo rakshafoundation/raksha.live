@@ -14,10 +14,12 @@ import {
   PhoneCall,
   CheckCircle2,
   LogIn,
+  Navigation,
 } from 'lucide-react';
 import { InjuryTiles } from '@/components/InjuryTiles';
 import { SpeciesChips } from '@/components/SpeciesChips';
 import { StepProgress } from '@/components/StepProgress';
+import { CATEGORY_LABELS } from '@/lib/directory-categories';
 import { ANIMAL_NAME_SUGGESTIONS } from '@/lib/labels';
 
 type Step = 'location' | 'photo' | 'details' | 'duplicate' | 'name' | 'done';
@@ -431,6 +433,40 @@ export default function ReportFlowPage() {
                         </li>
                       ))}
                     </ul>
+                  </div>
+                )}
+
+                {result.nearbyDirectory?.length > 0 && (
+                  <div className="card">
+                    <p className="section-label mb-1">Nearby vets, NGOs & pharmacies</p>
+                    <p className="mb-3 text-xs text-zinc-400">
+                      Not part of the rescue network — call them directly if you need help now.
+                    </p>
+                    <ul className="flex flex-col gap-3">
+                      {result.nearbyDirectory.map((d: any) => (
+                        <li key={d.id} className="flex items-center justify-between gap-3">
+                          <Link href={`/directory/${d.id}`} className="min-w-0">
+                            <p className="truncate font-semibold text-zinc-900">{d.name}</p>
+                            <p className="text-xs text-zinc-500">
+                              {CATEGORY_LABELS[d.category as keyof typeof CATEGORY_LABELS]} · {d.area} ·{' '}
+                              {d.distanceMeters < 1000
+                                ? `${Math.round(d.distanceMeters / 50) * 50}m`
+                                : `${(d.distanceMeters / 1000).toFixed(1)}km`}
+                              {d.isOpen24x7 && ' · Open 24×7'}
+                            </p>
+                          </Link>
+                          <a
+                            href={`tel:${d.phone}`}
+                            className="flex shrink-0 items-center gap-1.5 rounded-full bg-info px-3.5 py-2 text-xs font-bold text-white"
+                          >
+                            <PhoneCall className="h-3.5 w-3.5" /> Call
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                    <Link href="/directory" className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-info">
+                      <Navigation className="h-3 w-3" /> See all on map
+                    </Link>
                   </div>
                 )}
               </>

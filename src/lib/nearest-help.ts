@@ -1,4 +1,4 @@
-import { OrganisationType, VerificationTier } from '@prisma/client';
+import { DirectoryCategory, OrganisationType, VerificationTier } from '@prisma/client';
 import { db } from './db';
 import { distanceMeters, type LatLng } from './geo';
 
@@ -57,5 +57,45 @@ export async function findNearestHelp(
       if (a.available !== b.available) return a.available ? -1 : 1;
       return a.distanceMeters - b.distanceMeters;
     })
+    .slice(0, limit);
+}
+
+export interface NearbyDirectoryEntry {
+  id: string;
+  name: string;
+  category: DirectoryCategory;
+  area: string;
+  distanceMeters: number;
+  phone: string;
+  isOpen24x7: boolean;
+}
+
+/**
+ * The general Mumbai services directory (NGOs, vets, pharmacies,
+ * ambulances, etc. — see prisma/seed.ts / src/lib/directory-seed-data.ts),
+ * shown to a reporter right after AI triage as real, callable options
+ * near them.
+ *
+ * Deliberately separate from findNearestHelp() above: that one is the
+ * dispatch-eligible rescue-network list tied to this specific case
+ * (acceptedToReceive, live capacity) and is often empty or tiny for any
+ * given location since it only includes verified network members. This
+ * one is informational — "here's who's actually nearby to call" — and
+ * draws from the full public directory regardless of network membership.
+ */
+export async function findNearbyDirectoryListings(location: LatLng, limit = 6): Promise<NearbyDirectoryEntry[]> {
+  const listings = await db.directoryListing.findMany();
+
+  return listings
+    .map((listing) => ({
+      id: listing.id,
+      name: listing.name,
+      category: listing.category,
+      area: listing.area,
+      distanceMeters: Math.round(distanceMeters(location, { latitude: listing.latitude, longitude: listing.longitude })),
+      phone: listing.phone,
+      isOpen24x7: listing.isOpen24x7,
+    }))
+    .sort((a, b) => a.distanceMeters - b.distanceMeters)
     .slice(0, limit);
 }
