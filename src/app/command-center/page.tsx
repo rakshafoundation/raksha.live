@@ -96,15 +96,39 @@ export default async function CommandCenterPage() {
         <h2 className="section-label mb-3">Verification queue</h2>
         <div className="flex flex-col gap-2.5">
           {pendingVerifications.length === 0 && <p className="card text-sm text-zinc-500">No pending applications.</p>}
-          {pendingVerifications.map((v) => (
-            <div key={v.id} className="card flex items-center justify-between gap-2">
-              <div>
-                <p className="font-bold text-zinc-900">{v.user?.name ?? v.organisation?.name ?? 'Unknown applicant'}</p>
-                <p className="text-sm text-zinc-500">Target tier: {v.targetTier}</p>
+          {pendingVerifications.map((v) => {
+            const documents = Array.isArray(v.documents)
+              ? (v.documents as Array<{ type?: string; storageRef?: string }>)
+              : [];
+            return (
+              <div key={v.id} className="card flex items-center justify-between gap-2">
+                <div>
+                  <p className="font-bold text-zinc-900">{v.user?.name ?? v.organisation?.name ?? 'Unknown applicant'}</p>
+                  <p className="text-sm text-zinc-500">Target tier: {v.targetTier}</p>
+                  {documents.length > 0 ? (
+                    <div className="mt-1 flex flex-wrap gap-x-3">
+                      {documents.map((doc, i) =>
+                        doc.storageRef ? (
+                          <a
+                            key={i}
+                            href={doc.storageRef}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm font-semibold text-info underline"
+                          >
+                            View {doc.type ?? 'document'} →
+                          </a>
+                        ) : null
+                      )}
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-xs text-critical">No document on file</p>
+                  )}
+                </div>
+                <VerificationDecisionButtons id={v.id} />
               </div>
-              <VerificationDecisionButtons id={v.id} />
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 

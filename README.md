@@ -309,6 +309,38 @@ post-login category choice.
    to that external link — **this platform never processes or holds the
    payment itself**, matching the non-negotiables checklist below.
 
+## Becoming an admin / approving verifications
+
+`/command-center` (the moderation dashboard, including the verification
+queue where NGO/vet sign-ups get approved) is gated on the ADMIN role.
+Nothing in the normal sign-up flow ever grants that role — the only
+ADMIN account is a demo user in `prisma/seed.ts` with no real login
+attached — so on a fresh deployment nobody can actually reach it yet.
+
+**One-time setup:**
+
+1. Sign in to the live site yourself at least once (Google or
+   dev-login) — this creates your `User` row.
+2. Set `ADMIN_GRANT_SECRET` in Vercel to any long random string, and
+   redeploy.
+3. Visit `https://<your-app>/api/admin/grant-admin?secret=<that value>&identifier=<your email or phone, exactly as you signed in with>`.
+   You'll get a plain-text confirmation once it works.
+4. Reload the site — you're now an admin. Go to `/command-center`.
+
+You only need to do this once (or again for a second admin). Keep
+`ADMIN_GRANT_SECRET` treated like a root password — anyone with it can
+make any signed-in account an admin, and there's no reason to remove
+the variable afterward.
+
+**Approving a verification:** `/command-center`'s "Verification queue"
+section lists every pending application (service-provider sign-ups from
+`/provider`, or any other Tier 2/3 request) with the applicant's name
+and target tier, a link to the document(s) they uploaded, and
+Approve/Reject buttons. Open the document, check it's real, then
+decide — approving a `VERIFIED` request lets that org start accepting
+cases; approving a `PAYMENT_APPROVED` request lets them run a
+fundraiser (see above).
+
 ## Non-negotiables checklist (brief §11) — status
 
 - [x] Server-side enforcement of photo-required transitions — never trusts the client (`case-state-machine.ts`, re-validated inside the DB transaction in `case-events.ts`)
