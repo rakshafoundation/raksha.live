@@ -28,16 +28,33 @@ function sanitizeEnvValue(value: string): string {
   return value.replace(/^﻿/, '').trim();
 }
 
+// Supabase's storage client concatenates the project URL directly into the
+// object request path (`${url}/storage/v1/object/...`). Any leftover path
+// segment or trailing slash on the URL — e.g. pasting the REST endpoint
+// (".../rest/v1/") or just a stray trailing "/" — produces a malformed
+// request the storage API rejects with "Invalid path specified in request
+// URL". Parsing the URL and keeping only the origin makes this immune to
+// that class of paste error rather than just the one instance seen so far.
+function extractSupabaseOrigin(value: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`NEXT_PUBLIC_SUPABASE_URL is not a valid URL: "${value}"`);
+  }
+  return `${parsed.protocol}//${parsed.host}`;
+}
+
 export async function saveCasePhoto(buffer: Buffer, mimeType: string): Promise<string> {
   const ext = mimeType.split('/')[1]?.replace('jpeg', 'jpg') ?? 'jpg';
   const filename = `${randomUUID()}.${ext}`;
 
   const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const rawKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const bucket = sanitizeEnvValue(process.env.STORAGE_BUCKET_PHOTOS || 'raksha-case-photos');
+  const bucket = sanitizeEnvValue(process.env.STORAGE_BUCKET_PHOTOS || 'raksha-case-photos').replace(/^\/+|\/+$/g, '');
 
   if (rawUrl && rawKey) {
-    const supabaseUrl = sanitizeEnvValue(rawUrl);
+    const supabaseUrl = extractSupabaseOrigin(sanitizeEnvValue(rawUrl));
     const serviceRoleKey = sanitizeEnvValue(rawKey);
 
     // Fails loudly with a specific, actionable message instead of the
@@ -46,9 +63,6 @@ export async function saveCasePhoto(buffer: Buffer, mimeType: string): Promise<s
     // which env var still has a bad character even after sanitizing.
     // eslint-disable-next-line no-control-regex
     const badCharPattern = /[^\x00-\xFF]/;
-    if (badCharPattern.test(supabaseUrl)) {
-      throw new Error('NEXT_PUBLIC_SUPABASE_URL contains a non-Latin-1 character even after trimming — re-copy it fresh from Supabase.');
-    }
     if (badCharPattern.test(serviceRoleKey)) {
       throw new Error('SUPABASE_SERVICE_ROLE_KEY contains a non-Latin-1 character even after trimming — re-copy it fresh from Supabase.');
     }
