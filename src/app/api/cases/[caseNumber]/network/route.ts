@@ -4,6 +4,7 @@ import { AssignmentStatus, CaseStatus, UserRoleName } from '@prisma/client';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { findNearestHelp } from '@/lib/nearest-help';
+import { isReceivingOrgMember } from '@/lib/case-org-auth';
 
 const RESPONDER_ROLES: UserRoleName[] = [
   UserRoleName.RESCUER,
@@ -38,13 +39,16 @@ export async function GET(_request: NextRequest, { params }: { params: { caseNum
       assignments: { where: { status: AssignmentStatus.ACCEPTED } },
       photos: true,
       receivingOrganisation: { select: { name: true } },
+      updates: { include: { organisation: { select: { name: true } } }, orderBy: { createdAt: 'desc' } },
+      documents: { include: { organisation: { select: { name: true } } }, orderBy: { createdAt: 'desc' } },
     },
   });
   if (!kase) return NextResponse.json({ error: 'Case not found' }, { status: 404 });
 
   const isOpenForPreview = kase.status === CaseStatus.TRIAGED;
   const isMyAssignment = kase.assignments.some((a) => a.responderUserId === session.user.id);
-  if (!isAdmin && !isOpenForPreview && !isMyAssignment) {
+  const isMyReceivingOrg = await isReceivingOrgMember(session.user.id, kase.receivingOrganisationId);
+  if (!isAdmin && !isOpenForPreview && !isMyAssignment && !isMyReceivingOrg) {
     return NextResponse.json({ error: 'Not assigned to this case.' }, { status: 403 });
   }
 
@@ -60,13 +64,38 @@ export async function GET(_request: NextRequest, { params }: { params: { caseNum
     species: kase.species,
     injuryType: kase.injuryType,
     status: kase.status,
+    outcomeType: kase.outcomeType,
     latitude: kase.latitude,
     longitude: kase.longitude,
     area: kase.area,
     reporter: { name: kase.reporter.name, phone: kase.reporter.phone },
     assessment: kase.aiAssessments[0] ?? null,
     photos: kase.photos.map((p) => p.url),
+    receivingOrganisationId: kase.receivingOrganisationId,
     receivingOrganisationName: kase.receivingOrganisation?.name ?? null,
+    isMyReceivingOrg,
     nearestHelp,
+    updates: kase.updates.map((u) => ({
+      id: u.id,
+      organisationName: u.organisation.name,
+      message: u.message,
+      photoUrl: u.photoUrl,
+      createdAt: u.createdAt,
+    })),
+    documents: kase.documents.map((d) => ({
+      id: d.id,
+      organisationName: d.organisation.name,
+      label: d.label,
+      url: d.url,
+      createdAt: d.createdAt,
+    })),
+    fundraiser:
+      kase.fundraisingGoalAmount != null
+        ? {
+            goalAmount: kase.fundraisingGoalAmount,
+            raisedAmount: kase.fundraisingRaisedAmount ?? 0,
+            paymentLink: kase.fundraisingPaymentLink,
+          }
+        : null,
   });
 }

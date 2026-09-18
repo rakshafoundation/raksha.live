@@ -85,7 +85,7 @@ export default async function HomePage() {
           <HelpTile href="/feed?help=funding" icon={IndianRupee} label="Donate" />
           <HelpTile href="/foster" icon={HomeIcon} label="Foster" />
           <HelpTile href="/rescuer" icon={Truck} label="Volunteer / Transport" />
-          <HelpTile href="/directory" icon={HeartHandshake} label="Join as NGO/Vet" />
+          <HelpTile href="/provider" icon={HeartHandshake} label="Join as NGO/Vet" />
         </div>
       </section>
 

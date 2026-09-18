@@ -6,6 +6,7 @@ import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { saveCasePhoto } from '@/lib/storage';
 import { applyCaseTransition } from '@/lib/case-events';
+import { isReceivingOrgMember } from '@/lib/case-org-auth';
 
 const RESPONDER_ROLES: UserRoleName[] = [
   UserRoleName.RESCUER,
@@ -84,9 +85,15 @@ export async function POST(request: NextRequest, { params }: { params: { caseNum
     const acceptedAssignment = await db.assignment.findFirst({
       where: { caseId: kase.id, responderUserId: session.user.id, status: AssignmentStatus.ACCEPTED },
     });
-    if (!acceptedAssignment) {
+    // The receiving org (accept-receiving/route.ts) creates an
+    // Assignment keyed by organisationId, not responderUserId — a vet/NGO
+    // staff member advancing a case through treatment authenticates via
+    // their org membership matching the case's receiving org, not a
+    // personal Assignment row.
+    const isReceivingOrgStaff = await isReceivingOrgMember(session.user.id, kase.receivingOrganisationId);
+    if (!acceptedAssignment && !isReceivingOrgStaff) {
       return NextResponse.json(
-        { error: 'Only the responder who accepted this case can update it further.' },
+        { error: 'Only the responder or receiving organisation for this case can update it further.' },
         { status: 403 }
       );
     }

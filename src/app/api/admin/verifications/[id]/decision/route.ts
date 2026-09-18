@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { UserRoleName, VerificationStatus } from '@prisma/client';
+import { UserRoleName, VerificationStatus, VerificationTier } from '@prisma/client';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
 
@@ -31,16 +31,20 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   });
 
   if (approve) {
+    // paymentApprovedAt is the field routes actually gate fundraising on
+    // (see fundraiser/route.ts) — set it explicitly here rather than
+    // inferring "PAYMENT_APPROVED tier" from verificationTier elsewhere.
+    const paymentApprovedAt = verification.targetTier === VerificationTier.PAYMENT_APPROVED ? new Date() : undefined;
     if (verification.userId) {
       await db.user.update({
         where: { id: verification.userId },
-        data: { verificationTier: verification.targetTier },
+        data: { verificationTier: verification.targetTier, paymentApprovedAt },
       });
     }
     if (verification.organisationId) {
       await db.organisation.update({
         where: { id: verification.organisationId },
-        data: { verificationTier: verification.targetTier },
+        data: { verificationTier: verification.targetTier, paymentApprovedAt },
       });
     }
   }

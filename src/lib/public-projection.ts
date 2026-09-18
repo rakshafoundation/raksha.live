@@ -1,4 +1,4 @@
-import type { Case, CaseEvent, CasePhoto } from '@prisma/client';
+import type { Case, CaseEvent, CasePhoto, CaseUpdate, CaseDocument } from '@prisma/client';
 
 /**
  * Non-negotiable: exact GPS and reporter identity must never appear in a
@@ -21,6 +21,31 @@ export interface PublicCase {
   // Public and safe: an org name is already public via the directory.
   // Exact GPS/reporter identity stay excluded above this line.
   receivingOrganisationName: string | null;
+  updates: PublicCaseUpdate[];
+  documents: PublicCaseDocument[];
+  fundraiser: PublicFundraiser | null;
+}
+
+export interface PublicCaseUpdate {
+  id: string;
+  organisationName: string;
+  message: string;
+  photoUrl: string | null;
+  createdAt: Date;
+}
+
+export interface PublicCaseDocument {
+  id: string;
+  organisationName: string;
+  label: string;
+  url: string;
+  createdAt: Date;
+}
+
+export interface PublicFundraiser {
+  goalAmount: number;
+  raisedAmount: number;
+  paymentLink: string;
 }
 
 export interface PublicCasePhoto {
@@ -37,7 +62,13 @@ export interface PublicTimelineEvent {
 }
 
 export function toPublicCase(
-  c: Case & { photos: CasePhoto[]; events: CaseEvent[]; receivingOrganisation?: { name: string } | null }
+  c: Case & {
+    photos: CasePhoto[];
+    events: CaseEvent[];
+    receivingOrganisation?: { name: string } | null;
+    updates?: (CaseUpdate & { organisation: { name: string } })[];
+    documents?: (CaseDocument & { organisation: { name: string } })[];
+  }
 ): PublicCase {
   return {
     caseNumber: c.caseNumber,
@@ -60,5 +91,31 @@ export function toPublicCase(
         note: e.note,
         createdAt: e.createdAt,
       })),
+    updates: (c.updates ?? [])
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .map((u) => ({
+        id: u.id,
+        organisationName: u.organisation.name,
+        message: u.message,
+        photoUrl: u.photoUrl,
+        createdAt: u.createdAt,
+      })),
+    documents: (c.documents ?? [])
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .map((d) => ({
+        id: d.id,
+        organisationName: d.organisation.name,
+        label: d.label,
+        url: d.url,
+        createdAt: d.createdAt,
+      })),
+    fundraiser:
+      c.fundraisingGoalAmount && c.fundraisingPaymentLink
+        ? {
+            goalAmount: c.fundraisingGoalAmount,
+            raisedAmount: c.fundraisingRaisedAmount ?? 0,
+            paymentLink: c.fundraisingPaymentLink,
+          }
+        : null,
   };
 }

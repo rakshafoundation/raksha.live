@@ -9,6 +9,7 @@ const NAV_LINKS = [
   { href: '/feed', label: 'Live feed' },
   { href: '/directory', label: 'Directory' },
   { href: '/stats', label: 'Stats' },
+  { href: '/provider', label: 'For NGOs/Vets' },
 ];
 
 export function AppHeader() {

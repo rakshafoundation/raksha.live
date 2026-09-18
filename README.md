@@ -261,15 +261,63 @@ header for why); nudge any pin that looks off via `/admin/directory`.
 `DATABASE_URL=<your Supabase pooler string> DIRECT_URL=<your Supabase direct string> npm run db:seed`
 locally — this needs Node.js and a clone of this repo.
 
+## Service provider portal (`/provider`)
+
+End-to-end flow for NGOs, vets, and clinics: register → get verified →
+accept a case → treat it → keep the public updated → close it. Same
+login as everyone else (Google/dev-login) — the only new thing is a
+post-login category choice.
+
+1. **Register** — sign in, go to `/provider`, pick a category (NGO or
+   Vet/Clinic), fill in org details, tap the map for a location, and
+   upload a registration/license document. This creates the
+   `Organisation` (unverified), a matching `DirectoryListing` (so it
+   shows up on `/directory` once verified), and a pending
+   `Verification` request.
+2. **Verification** — an admin reviews the document in the Command
+   Center's existing verification queue and approves/rejects, exactly
+   like the brief's Tier 2 flow. Nothing about `/provider` bypasses that
+   review.
+3. **Accept a case** — once verified, `/provider` shows the same
+   incoming-case queue as `/intake` (kept for backwards compatibility)
+   plus "My cases." Accepting claims the case for treatment
+   (`accept-receiving`, unchanged).
+4. **Treat it** — the rescuer's own flow still owns pickup
+   (ACCEPTED→ASSIGNED→PICKED_UP→AT_VET, with photo proof); from AT_VET
+   onward the receiving org's `/provider/[caseNumber]` page takes over:
+   advance TREATMENT → RECOVERY → OUTCOME (with outcome type, photo
+   required for RELEASED) → CLOSED, all through the same state machine
+   and photo-proof rules as everywhere else — `events/route.ts` was
+   extended to recognize org-based acceptance (not just an individual
+   rescuer's), nothing about the state machine itself changed.
+5. **Keep the public updated** — two independent, additive mechanisms,
+   both visible on the case's public page:
+   - **Text/photo updates** (`CaseUpdate`) — a progress note that
+     doesn't require a status change ("stable, on IV fluids").
+   - **Vet reports/documents** (`CaseDocument`) — uploaded files shown
+     publicly on the case page. This is a deliberate, explicit exception
+     to this platform's usual private-by-default handling of
+     medical/patient data, made because the org itself chooses to
+     publish its own report — see the model's comment in
+     `schema.prisma` if picking this apart later.
+6. **Fundraising, redirect-only** — an org whose payment details an
+   admin has approved (`Organisation.paymentApprovedAt`, requested via
+   `/api/provider/payment-approval`, approved the same way as any other
+   verification) can set a goal, a self-reported running total, and a
+   link to its own UPI/Razorpay/bank page for a case. The public case
+   page shows a progress bar and a "Donate" button that sends the donor
+   to that external link — **this platform never processes or holds the
+   payment itself**, matching the non-negotiables checklist below.
+
 ## Non-negotiables checklist (brief §11) — status
 
 - [x] Server-side enforcement of photo-required transitions — never trusts the client (`case-state-machine.ts`, re-validated inside the DB transaction in `case-events.ts`)
 - [x] Cases immutable/undeletable; closure requires outcome + (if unattended) a reason
 - [x] Exact GPS + reporter identity never in the public API (`public-projection.ts`)
 - [x] Graphic photos blurred by default, tap-to-view
-- [ ] ID/compliance documents encrypted at rest, admin-only — schema has the fields (`idDocRef`, `Verification.documents`); encryption-at-rest + the admin document viewer are not implemented yet
-- [x] Contribute button gated on payment-approved flag, server-side — N/A yet, payments not built (by design — see Roadmap)
-- [x] Platform holds no funds anywhere in the code — no payment code exists yet at all
+- [ ] ID/compliance documents encrypted at rest, admin-only — schema has the fields (`idDocRef`, `Verification.documents`); encryption-at-rest + the admin document viewer are not implemented yet. Provider registration documents (`/provider` onboarding) currently go through the same public photo bucket as case photos, not a private one — fine for a pilot, but tighten this (a real private `STORAGE_BUCKET_DOCS`, per `.env.example`) before real license/registration documents are uploaded at any scale.
+- [x] Contribute button gated on payment-approved flag, server-side — `fundraiser/route.ts` checks `Organisation.paymentApprovedAt`, only ever set by the admin verification-decision route
+- [x] Platform holds no funds anywhere in the code — fundraising is redirect-only: a goal, a self-reported running total, and a link to the org's own payment page (see "Service provider portal" below); no payment processor is integrated
 - [x] Every AI medical output carries the triage disclaimer; template-driven first aid only
 - [x] AI can block duplicate creation but merging live cases always requires human action
 - [ ] All timestamps IST; currency ₹ formatted Indian-style — timeline display uses `Asia/Kolkata`; no currency formatting exists yet (no payments UI)

@@ -96,6 +96,8 @@ model User {
   fosterPlacements   FosterPlacement[]
   contributionsMade  Contribution[]        @relation("Donor")
   moderationFlagsRaised ModerationFlag[]   @relation("FlagRaisedBy")
+  caseUpdatesAuthored   CaseUpdate[]       @relation("CaseUpdateAuthor")
+  caseDocumentsUploaded CaseDocument[]     @relation("CaseDocumentUploader")
 
   onDuty      Boolean @default(false) // availability toggle: rescuer/ambulance
 
@@ -170,6 +172,8 @@ model Organisation {
   invoices     Invoice[]
   directoryListing DirectoryListing?
   receivingCases Case[] @relation("CaseReceivingOrg")
+  caseUpdates    CaseUpdate[]
+  caseDocuments  CaseDocument[]
 
   @@index([type, verificationTier])
 }
@@ -308,6 +312,17 @@ model Case {
   invoices     Invoice[]
   escalations  Escalation[]
   moderationFlags ModerationFlag[]
+  updates      CaseUpdate[]
+  documents    CaseDocument[]
+
+  // Redirect-only fundraising (never platform-held funds — see build
+  // brief §11 "platform holds no funds"): a goal and an external link to
+  // the receiving org's own UPI/payment page. `fundraisingRaisedAmount`
+  // is self-reported by that org, not computed from any payment
+  // processor, since none exists on this platform.
+  fundraisingGoalAmount   Int?
+  fundraisingRaisedAmount Int?    @default(0)
+  fundraisingPaymentLink  String?
 
   // Duplicate merge: a case that was folded into another lives on as a
   // pointer, never deleted. mergedIntoId points at the surviving case.
@@ -349,6 +364,46 @@ model CaseEvent {
 
   case  Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
   actor User @relation("EventActor", fields: [actorId], references: [id])
+
+  @@index([caseId, createdAt])
+}
+
+// A public progress note from the receiving org — deliberately separate
+// from CaseEvent, which is reserved for state-machine transitions only.
+// This is how an org says "still stable, on IV fluids" without that
+// being (or requiring) a status change.
+model CaseUpdate {
+  id             String   @id @default(cuid())
+  caseId         String
+  organisationId String
+  authorUserId   String
+  message        String
+  photoUrl       String?
+  createdAt      DateTime @default(now())
+
+  case         Case         @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  organisation Organisation @relation(fields: [organisationId], references: [id])
+  author       User         @relation("CaseUpdateAuthor", fields: [authorUserId], references: [id])
+
+  @@index([caseId, createdAt])
+}
+
+// Vet reports / treatment documents. Shown publicly on the case page —
+// an explicit product choice (not the platform's default elsewhere,
+// where medical/patient detail is kept private) made because the org
+// itself is the one choosing to publish its own report for this case.
+model CaseDocument {
+  id               String   @id @default(cuid())
+  caseId           String
+  organisationId   String
+  uploadedByUserId String
+  url              String
+  label            String
+  createdAt        DateTime @default(now())
+
+  case         Case         @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  organisation Organisation @relation(fields: [organisationId], references: [id])
+  uploadedBy   User         @relation("CaseDocumentUploader", fields: [uploadedByUserId], references: [id])
 
   @@index([caseId, createdAt])
 }
