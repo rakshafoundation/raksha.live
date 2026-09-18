@@ -182,6 +182,24 @@ so it's paste-values-and-deploy, not debugging.
    `SUPABASE_SERVICE_ROLE_KEY` — this key bypasses row-level security,
    never expose it client-side or commit it).
 
+**1b. Google Maps — directory map tab (~3 min, optional)**
+
+Powers the "Map" tab on `/directory` (pins for every NGO/vet/shop,
+click-to-call, directions, nearest-first from GPS). Skip this and the
+directory still works — the map tab just shows a "not set up yet"
+message and the List view is unaffected.
+
+1. [console.cloud.google.com](https://console.cloud.google.com) → create
+   a project (or reuse one) → APIs & Services → Library → enable **Maps
+   JavaScript API**.
+2. APIs & Services → Credentials → Create Credentials → API key.
+3. Click the new key → Application restrictions → **Websites** → add
+   your Vercel URL (e.g. `raksha-live-ayd2.vercel.app/*`) and
+   `localhost:3000/*` for local dev. This key ships in the client
+   bundle by design (`NEXT_PUBLIC_...`) — the website restriction is
+   what keeps it from being usable elsewhere, not secrecy.
+4. Copy the key → `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`.
+
 **2. Vercel — hosting (~3 min)**
 
 1. [vercel.com](https://vercel.com) → sign in with GitHub → Add New →
@@ -199,6 +217,7 @@ so it's paste-values-and-deploy, not debugging.
    | `SUPABASE_SERVICE_ROLE_KEY` | from step 1.4 |
    | `STORAGE_BUCKET_PHOTOS` | `raksha-case-photos` |
    | `ANTHROPIC_API_KEY` | optional — triage fails safe to "treat as urgent" without it |
+   | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | optional — from step 1b, powers the `/directory` map tab |
    | `ENABLE_DEV_LOGIN` / `NEXT_PUBLIC_DEV_LOGIN_ENABLED` | `true` if you want the phone-only dev login live for demoing before real OTP/OAuth is wired; otherwise omit both |
 
 3. Deploy. The build runs `prisma migrate deploy` automatically before

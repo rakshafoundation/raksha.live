@@ -1,22 +1,11 @@
 import { DirectoryCategory } from '@prisma/client';
 import { db } from '@/lib/db';
 import Link from 'next/link';
-import { BadgeCheck, Clock, PhoneCall, Search } from 'lucide-react';
+import { Clock, Search } from 'lucide-react';
+import { CATEGORY_LABELS } from '@/lib/directory-categories';
+import { DirectoryView } from '@/components/DirectoryView';
 
 export const dynamic = 'force-dynamic';
-
-const CATEGORY_LABELS: Record<DirectoryCategory, string> = {
-  NGO: 'NGOs',
-  VET: 'Vets',
-  VET_LAB_DIAGNOSTICS: 'Vet labs & diagnostics',
-  VET_PHARMACY: 'Veterinary pharmacies',
-  PET_FOOD_STORE: 'Pet food stores',
-  PET_FRIENDLY_CAFE: 'Pet-friendly cafes',
-  TOY_ACCESSORY_SHOP: 'Toy & accessory shops',
-  GROOMER: 'Groomers',
-  BOARDING: 'Boarding',
-  TRAINER: 'Trainers',
-};
 
 export default async function DirectoryPage({
   searchParams,
@@ -35,6 +24,20 @@ export default async function DirectoryPage({
     orderBy: [{ organisationId: 'desc' }, { name: 'asc' }],
     take: 100,
   });
+
+  const items = listings.map((l) => ({
+    id: l.id,
+    name: l.name,
+    category: l.category,
+    area: l.area,
+    latitude: l.latitude,
+    longitude: l.longitude,
+    phone: l.phone,
+    hours: l.hours,
+    isOpen24x7: l.isOpen24x7,
+    claimed: Boolean(l.claimedAt),
+    verified: Boolean(l.organisation && l.organisation.verificationTier !== 'NONE'),
+  }));
 
   return (
     <main className="flex flex-col gap-5 px-4 pb-16 pt-6">
@@ -64,42 +67,7 @@ export default async function DirectoryPage({
         <Clock className="h-3.5 w-3.5" /> Open 24×7
       </Link>
 
-      <div className="flex flex-col gap-2.5">
-        {listings.length === 0 && (
-          <p className="card text-center text-sm text-zinc-400">
-            No listings yet — seed the directory from the 89-practice base (see prisma/seed.ts).
-          </p>
-        )}
-        {listings.map((l) => {
-          const verified = Boolean(l.organisation && l.organisation.verificationTier !== 'NONE');
-          return (
-            <div key={l.id} className="card">
-              <div className="flex items-start justify-between gap-2">
-                <span className="flex items-center gap-1.5 font-bold text-zinc-900">
-                  {l.name}
-                  {verified && <BadgeCheck className="h-4 w-4 shrink-0 text-info" />}
-                </span>
-                {l.isOpen24x7 && (
-                  <span className="shrink-0 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-bold text-success">
-                    OPEN 24×7
-                  </span>
-                )}
-              </div>
-              <p className="mt-0.5 text-sm text-zinc-500">
-                {CATEGORY_LABELS[l.category]} · {l.area}
-                {l.claimedAt && (
-                  <span className="ml-1.5 rounded-full bg-zinc-100 px-1.5 py-0.5 text-[11px] font-semibold text-zinc-500">
-                    Claimed
-                  </span>
-                )}
-              </p>
-              <a href={`tel:${l.phone}`} className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold text-info">
-                <PhoneCall className="h-3.5 w-3.5" /> {l.phone}
-              </a>
-            </div>
-          );
-        })}
-      </div>
+      <DirectoryView listings={items} />
     </main>
   );
 }
