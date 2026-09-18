@@ -13,11 +13,12 @@ const CATEGORY_MAP: Record<'NGO' | 'VET', { orgType: OrganisationType; role: Use
 
 const BodySchema = z.object({
   category: z.enum(['NGO', 'VET']),
-  name: z.string().min(1).max(200),
-  area: z.string().min(1).max(200),
-  phone: z.string().min(1).max(40),
-  latitude: z.coerce.number().min(-90).max(90),
-  longitude: z.coerce.number().min(-180).max(180),
+  claimListingId: z.string().optional(),
+  name: z.string().min(1).max(200).optional(),
+  area: z.string().min(1).max(200).optional(),
+  phone: z.string().min(1).max(40).optional(),
+  latitude: z.coerce.number().min(-90).max(90).optional(),
+  longitude: z.coerce.number().min(-180).max(180).optional(),
 });
 
 /**
@@ -56,49 +57,95 @@ export async function POST(request: NextRequest) {
   const docBuffer = Buffer.from(await docFile.arrayBuffer());
   const docUrl = await saveCasePhoto(docBuffer, docFile.type || 'application/octet-stream');
 
-  const organisation = await db.$transaction(async (tx) => {
-    const org = await tx.organisation.create({
-      data: {
-        name: input.name,
-        type: mapping.orgType,
-        area: input.area,
-        latitude: input.latitude,
-        longitude: input.longitude,
-        phone: input.phone,
-        verificationTier: VerificationTier.NONE,
-        directoryListing: {
-          create: {
-            name: input.name,
-            category: mapping.directoryCategory,
-            area: input.area,
-            latitude: input.latitude,
-            longitude: input.longitude,
-            phone: input.phone,
-          },
+  // Two ways to establish the org: claim an existing unclaimed listing
+  // (the real Mumbai directory data — see claimable-listings/route.ts),
+  // which reuses that listing's details and marks it claimed instead of
+  // creating a duplicate; or enter details manually, which creates a
+  // fresh Organisation + DirectoryListing as before.
+  let claimedListing: { name: string; area: string; phone: string; latitude: number; longitude: number } | null = null;
+  if (input.claimListingId) {
+    const listing = await db.directoryListing.findUnique({ where: { id: input.claimListingId } });
+    if (!listing || listing.organisationId) {
+      return NextResponse.json({ error: 'That listing is no longer available to claim.' }, { status: 409 });
+    }
+    claimedListing = listing;
+  } else if (!input.name || !input.area || !input.phone || input.latitude == null || input.longitude == null) {
+    return NextResponse.json({ error: 'Name, area, phone, and location are required.' }, { status: 400 });
+  }
+
+  const orgDetails = claimedListing ?? {
+    name: input.name!,
+    area: input.area!,
+    phone: input.phone!,
+    latitude: input.latitude!,
+    longitude: input.longitude!,
+  };
+
+  const ALREADY_CLAIMED = 'ALREADY_CLAIMED';
+  let organisation;
+  try {
+    organisation = await db.$transaction(async (tx) => {
+      const org = await tx.organisation.create({
+        data: {
+          name: orgDetails.name,
+          type: mapping.orgType,
+          area: orgDetails.area,
+          latitude: orgDetails.latitude,
+          longitude: orgDetails.longitude,
+          phone: orgDetails.phone,
+          verificationTier: VerificationTier.NONE,
         },
-      },
-    });
+      });
 
-    await tx.organisationMember.create({
-      data: { organisationId: org.id, userId: session.user.id, isAuthorisedSignatory: true },
-    });
+      if (input.claimListingId) {
+        // Re-check-and-claim atomically inside the transaction — closes
+        // the race between the earlier read and this write if two people
+        // try to claim the same listing at once.
+        const result = await tx.directoryListing.updateMany({
+          where: { id: input.claimListingId, organisationId: null },
+          data: { organisationId: org.id, claimedAt: new Date() },
+        });
+        if (result.count === 0) throw new Error(ALREADY_CLAIMED);
+      } else {
+        await tx.directoryListing.create({
+          data: {
+            organisationId: org.id,
+            name: orgDetails.name,
+            category: mapping.directoryCategory,
+            area: orgDetails.area,
+            latitude: orgDetails.latitude,
+            longitude: orgDetails.longitude,
+            phone: orgDetails.phone,
+          },
+        });
+      }
 
-    await tx.userRoleAssignment.upsert({
-      where: { userId_role: { userId: session.user.id, role: mapping.role } },
-      update: {},
-      create: { userId: session.user.id, role: mapping.role },
-    });
+      await tx.organisationMember.create({
+        data: { organisationId: org.id, userId: session.user.id, isAuthorisedSignatory: true },
+      });
 
-    await tx.verification.create({
-      data: {
-        organisationId: org.id,
-        targetTier: VerificationTier.VERIFIED,
-        documents: [{ type: 'registration', storageRef: docUrl }],
-      },
-    });
+      await tx.userRoleAssignment.upsert({
+        where: { userId_role: { userId: session.user.id, role: mapping.role } },
+        update: {},
+        create: { userId: session.user.id, role: mapping.role },
+      });
 
-    return org;
-  });
+      await tx.verification.create({
+        data: {
+          organisationId: org.id,
+          targetTier: VerificationTier.VERIFIED,
+          documents: [{ type: 'registration', storageRef: docUrl }],
+        },
+      });
+
+      return org;
+    });
+  } catch (e) {
+    if (e instanceof Error && e.message === ALREADY_CLAIMED) {
+      return NextResponse.json({ error: 'That listing is no longer available to claim.' }, { status: 409 });
+    }
+    throw e;
+  }
 
   return NextResponse.json({ organisationId: organisation.id, name: organisation.name });
 }
