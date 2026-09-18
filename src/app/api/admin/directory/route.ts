@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { DirectoryCategory } from '@prisma/client';
-import { db } from '@/lib/db';
+import { createDirectoryListingIfNew } from '@/lib/directory-admin';
 
 /**
  * Adds a directory listing (real vets/NGOs/pharmacies/etc.), gated by a
@@ -38,6 +38,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const listing = await db.directoryListing.create({ data: parsed.data });
-  return NextResponse.json({ id: listing.id });
+  const { id, created } = await createDirectoryListingIfNew(parsed.data);
+  return NextResponse.json(created ? { id } : { id, skipped: 'duplicate' });
 }

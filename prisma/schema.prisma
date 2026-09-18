@@ -555,6 +555,7 @@ enum DirectoryCategory {
   GROOMER
   BOARDING
   TRAINER
+  AMBULANCE
 }
 
 model DirectoryListing {

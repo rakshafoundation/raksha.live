@@ -240,13 +240,27 @@ database access needed. This page isn't linked from anywhere in the nav
 on purpose; bookmark the URL. Anyone with the secret can add listings,
 so treat it like a password.
 
-**Bulk import from a spreadsheet (for an initial large batch):** put a
-CSV at `prisma/directory-seed.csv` (columns: see
+**One-click bulk import of the curated Mumbai dataset (recommended for
+the initial population):** open
+`https://<your-app>/api/admin/directory/bulk-import?secret=<ADMIN_DIRECTORY_SECRET>`
+— this imports the real, pre-researched list of Mumbai NGOs/shelters,
+vet hospitals, pet stores, vet pharmacies, and animal ambulances baked
+into `src/lib/directory-seed-data.ts`. It geocodes each address (via
+OpenStreetMap's free Nominatim service) and writes it straight to the
+live database, entirely inside your Vercel deployment — no terminal, no
+DB access, nothing installed. It processes a small batch at a time and
+ends each page with a "Continue" button; keep clicking until it says
+"All done." It's safe to click "Continue" again or re-open the same
+URL if you're unsure how far you got — it skips anything already
+imported rather than duplicating it. To add more real listings later,
+extend the `DIRECTORY_SEED_DATA` array and redeploy, then revisit the
+same URL.
+
+**Bulk import from your own spreadsheet:** put a CSV at
+`prisma/directory-seed.csv` (columns: see
 `prisma/directory-seed-template.csv`) and run
 `DATABASE_URL=<your Supabase pooler string> DIRECT_URL=<your Supabase direct string> npm run db:seed`
-locally — this needs Node.js and a clone of this repo, so it's really
-only worth it for importing dozens of listings at once rather than a
-handful.
+locally — this needs Node.js and a clone of this repo.
 
 ## Non-negotiables checklist (brief §11) — status
 

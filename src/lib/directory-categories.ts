@@ -11,6 +11,7 @@ export const CATEGORY_LABELS: Record<DirectoryCategory, string> = {
   GROOMER: 'Groomers',
   BOARDING: 'Boarding',
   TRAINER: 'Trainers',
+  AMBULANCE: 'Animal ambulances',
 };
 
 // Marker/dot colors per category for the map view — hex values since
@@ -26,4 +27,5 @@ export const CATEGORY_MARKER_COLOR: Record<DirectoryCategory, string> = {
   GROOMER: '#65a30d',
   BOARDING: '#4f46e5',
   TRAINER: '#dc2626',
+  AMBULANCE: '#e11d48',
 };
