@@ -130,7 +130,11 @@ export default function ReportFlowPage() {
   }
 
   async function checkDuplicatesAndAdvance() {
-    if (!draft.species || !draft.latitude || !draft.longitude) return;
+    setSubmitError(null);
+    if (!draft.species || !draft.latitude || !draft.longitude) {
+      setSubmitError('Location is missing — go back and set it again before continuing.');
+      return;
+    }
     setCheckingDuplicates(true);
     try {
       const res = await fetch('/api/cases/duplicate-check', {
@@ -138,6 +142,10 @@ export default function ReportFlowPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ species: draft.species, latitude: draft.latitude, longitude: draft.longitude }),
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error?.toString() ?? `Could not continue (${res.status}). Please try again.`);
+      }
       const data = await res.json();
       if (data.candidates?.length > 0) {
         setCandidates(data.candidates);
@@ -145,6 +153,8 @@ export default function ReportFlowPage() {
       } else {
         setStep('name');
       }
+    } catch (err: any) {
+      setSubmitError(err.message || 'Something went wrong — please try again.');
     } finally {
       setCheckingDuplicates(false);
     }
@@ -303,6 +313,11 @@ export default function ReportFlowPage() {
               <p className="section-label mb-2.5">Species</p>
               <SpeciesChips value={draft.species} onChange={(v) => setDraft((d) => ({ ...d, species: v }))} />
             </div>
+            {submitError && (
+              <p className="flex items-center gap-2 text-sm text-critical">
+                <AlertTriangle className="h-4 w-4 shrink-0" /> {submitError}
+              </p>
+            )}
           </section>
         )}
 
